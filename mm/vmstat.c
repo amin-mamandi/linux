@@ -29,6 +29,10 @@
 #include <linux/page_ext.h>
 #include <linux/page_owner.h>
 
+#ifdef CONFIG_CGROUP_PALLOC
+#include <linux/palloc.h>
+#endif
+
 #include "internal.h"
 
 #ifdef CONFIG_NUMA
@@ -1460,6 +1464,44 @@ static void frag_show_print(struct seq_file *m, pg_data_t *pgdat,
 						struct zone *zone)
 {
 	int order;
+
+#ifdef CONFIG_CGROUP_PALLOC
+	int color, mt, cnt, bins;
+	struct free_area *area;
+	struct list_head *curr;
+
+	seq_printf(m, "--------\n");
+
+	/* Order by memory type */
+	for (mt = 0; mt < MIGRATE_TYPES; mt++) {
+		seq_printf(m, "-%17s[%d]", "mt", mt);
+		for (order = 0; order < MAX_ORDER; order++) {
+			area = &(zone->free_area[order]);
+			cnt  = 0;
+
+			list_for_each(curr, &area->free_list[mt])
+				cnt++;
+
+			seq_printf(m, "%6d ", cnt);
+		}
+
+		seq_printf(m, "\n");
+	}
+
+	/* Order by color */
+	seq_printf(m, "--------\n");
+	bins = palloc_bins();
+
+	for (color = 0; color < bins; color++) {
+		seq_printf(m, "- color [%d:%0x]", color, color);
+		cnt = 0;
+
+		list_for_each(curr, &zone->color_list[color])
+			cnt++;
+
+		seq_printf(m, "%6d\n", cnt);
+	}
+#endif /* CONFIG_CGROUP_PALLOC */
 
 	seq_printf(m, "Node %d, zone %8s ", pgdat->node_id, zone->name);
 	for (order = 0; order < MAX_ORDER; ++order)

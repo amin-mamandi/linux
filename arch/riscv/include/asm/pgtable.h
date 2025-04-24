@@ -370,6 +370,20 @@ static inline pte_t pte_mkspecial(pte_t pte)
 	return __pte(pte_val(pte) | _PAGE_SPECIAL);
 }
 
+#ifdef CONFIG_MMAP_OUTER_CACHE
+
+static inline pte_t pte_mkdetmem(pte_t pte)
+{
+    /* Clear existing memory type bits and set deterministic memory type */
+    pte_val(pte) &= ~(_PAGE_MTMASK);
+    pte_val(pte) |= _PAGE_DETMEM;
+    /* Set the software-reserved bit to mark this as a special page */
+    pte_val(pte) |= _PAGE_SPECIAL;
+    return pte;
+}
+
+#endif
+
 static inline pte_t pte_mkhuge(pte_t pte)
 {
 	return pte;

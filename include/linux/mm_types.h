@@ -651,6 +651,10 @@ struct mm_struct {
 #endif
 		int map_count;			/* number of VMAs */
 
+#if 0 
+		bool dm_page_fault;
+#endif
+
 		spinlock_t page_table_lock; /* Protects page tables and some
 					     * counters
 					     */

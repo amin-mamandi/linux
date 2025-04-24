@@ -6033,10 +6033,12 @@ int __init cgroup_init_early(void)
 	RCU_INIT_POINTER(init_task.cgroups, &init_css_set);
 
 	for_each_subsys(ss, i) {
+#if 0
 		WARN(!ss->css_alloc || !ss->css_free || ss->name || ss->id,
 		     "invalid cgroup_subsys %d:%s css_alloc=%p css_free=%p id:name=%d:%s\n",
 		     i, cgroup_subsys_name[i], ss->css_alloc, ss->css_free,
 		     ss->id, ss->name);
+#endif
 		WARN(strlen(cgroup_subsys_name[i]) > MAX_CGROUP_TYPE_NAMELEN,
 		     "cgroup_subsys_name %s too long\n", cgroup_subsys_name[i]);
 

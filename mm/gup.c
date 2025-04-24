@@ -1019,6 +1019,36 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 	return 0;
 }
 
+#ifdef CONFIG_MMAP_OUTER_CACHE
+
+inline pte_t* get_pte(unsigned long start, struct mm_struct *mm, unsigned int gup_flags)
+{
+    unsigned long pg = start & PAGE_MASK;
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+
+#if 0
+
+    /* user gate pages are read-only */
+    if (gup_flags & FOLL_WRITE)
+        return i ? : -EFAULT;
+
+#endif
+
+    if (pg > TASK_SIZE)
+        pgd = pgd_offset_k(pg);
+    else
+        pgd = pgd_offset_gate(mm, pg);
+    BUG_ON(pgd_none(*pgd));
+    pud = pud_offset(pgd, pg);
+    BUG_ON(pud_none(*pud));
+    pmd = pmd_offset(pud, pg);
+    return pte_offset_map(pmd, pg);
+}
+
+#endif
+
 /**
  * __get_user_pages() - pin user pages in memory
  * @mm:		mm_struct of target mm
@@ -1099,6 +1129,11 @@ static long __get_user_pages(struct mm_struct *mm,
 		struct page *page;
 		unsigned int foll_flags = gup_flags;
 		unsigned int page_increm;
+
+#ifdef CONFIG_MMAP_OUTER_CACHE
+		pte_t *page_table;
+		pte_t entry;
+#endif
 
 		/* first iteration or cross vma bound */
 		if (!vma || start >= vma->vm_end) {
@@ -1193,6 +1228,17 @@ next_page:
 			vmas[i] = vma;
 			ctx.page_mask = 0;
 		}
+#ifdef CONFIG_MMAP_OUTER_CACHE
+		if (vma->vm_flags & VM_OUTERCACHE) {
+			page_table = get_pte(start, mm, gup_flags);
+			entry = pte_mkoutercache(*page_table);
+			set_pte_at(mm, start, page_table, entry);
+#if 0
+		printk("start = 0x%08lx; pte_val = 0x%08lx; vm_flags = 0x%08lx\n",
+			start, (u32)pte_val(*page_table), vma->vm_flags);
+#endif
+		}
+#endif
 		page_increm = 1 + (~(start >> PAGE_SHIFT) & ctx.page_mask);
 		if (page_increm > nr_pages)
 			page_increm = nr_pages;

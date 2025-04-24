@@ -845,6 +845,32 @@ config HAVE_SETUP_PER_CPU_AREA
 config FRONTSWAP
 	bool
 
+config DETMEM_PALLOC
+       bool "Enable PALLOC with Deterministic Memory support"
+       depends on CGROUP_PALLOC && MMAP_OUTER_CACHE
+       default n 
+	   help
+		 This option enables the use of Deterministic Memory support
+		 for the PALLOC memory allocator.  This is a new memory
+		 allocation scheme that allows for more efficient memory
+		 allocation and deallocation.
+		 
+config MMAP_OUTER_CACHE
+       bool "Enable additional MMAP flag MAP_OUTER_CACHE"
+       depends on ARM
+       default n
+       help
+         When two processes share a portion of memory, CPU coherency
+         protocols are responsible for maintaining private cache
+         copies coherent. However, this may introduce predictability
+         issues on parallel tasks with real-time requirements. This
+         option introduces an additional flag (MAP_OUTER_CACHE) for MMAP
+         that causes a block of allocated memory to be flagged as
+         outer-cacheable only. This is supported only on ARM
+         architectures.
+
+	 If unsure, say N to disable outer caching.
+
 config CMA
 	bool "Contiguous Memory Allocator"
 	depends on MMU

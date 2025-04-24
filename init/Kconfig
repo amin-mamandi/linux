@@ -1202,6 +1202,13 @@ config SOCK_CGROUP_DATA
 	bool
 	default n
 
+config CGROUP_PALLOC
+	bool "Enable PALLOC"
+	help
+	  Enable PALLOC. PALLOC is a color-aware page-based physical memory
+	  allocator which replaces the buddy allocator for order-zero page
+	  allocations.
+
 endif # CGROUPS
 
 menuconfig NAMESPACES

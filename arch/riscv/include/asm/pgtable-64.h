@@ -89,6 +89,7 @@ typedef struct {
 #define _PAGE_NOCACHE_SVPBMT	(1UL << 61)
 #define _PAGE_IO_SVPBMT		(1UL << 62)
 #define _PAGE_MTMASK_SVPBMT	(_PAGE_NOCACHE_SVPBMT | _PAGE_IO_SVPBMT)
+#define _PAGE_DETMEMORY_SVPBMT (3UL << 61)  /* Using reserved value 11 */
 
 /*
  * [63:59] T-Head Memory Type definitions:
@@ -101,6 +102,12 @@ typedef struct {
 #define _PAGE_NOCACHE_THEAD	0UL
 #define _PAGE_IO_THEAD		(1UL << 63)
 #define _PAGE_MTMASK_THEAD	(_PAGE_PMA_THEAD | _PAGE_IO_THEAD | (1UL << 59))
+
+#ifdef CONFIG_MMAP_OUTER_CACHE
+
+#define _PAGE_DETMEMORY_THEAD	((1UL << 59) | (1UL << 58))  /* Using reserved bit pattern - it may not be needed */
+
+#endif
 
 static inline u64 riscv_page_mtmask(void)
 {
@@ -130,11 +137,28 @@ static inline u64 riscv_page_io(void)
 #define _PAGE_IO		riscv_page_io()
 #define _PAGE_MTMASK		riscv_page_mtmask()
 
+#ifdef CONFIG_MMAP_OUTER_CACHE
+
+#define _PAGE_DETMEM		riscv_page_detmem()
+
+#endif
+
 /* Set of bits to preserve across pte_modify() */
 #define _PAGE_CHG_MASK  (~(unsigned long)(_PAGE_PRESENT | _PAGE_READ |	\
 					  _PAGE_WRITE | _PAGE_EXEC |	\
 					  _PAGE_USER | _PAGE_GLOBAL |	\
 					  _PAGE_MTMASK))
+
+#ifdef CONFIG_MMAP_OUTER_CACHE
+
+static inline u64 riscv_page_detmem(void)
+{
+    u64 val;
+    ALT_SVPBMT(val, _PAGE_DETMEM);
+    return val;
+}
+
+#endif
 
 static inline int pud_present(pud_t pud)
 {

@@ -30,6 +30,13 @@
 #define MAP_SYNC		0x080000 /* perform synchronous page faults for the mapping */
 #define MAP_FIXED_NOREPLACE	0x100000	/* MAP_FIXED which doesn't unmap underlying mapping */
 
+/* 
+ * MAP_HUGETLB and MAP_OUTER_CACHE cannot be defined at the same time
+ */
+#ifdef CONFIG_MMAP_OUTER_CACHE
+#define MAP_OUTER_CACHE 0x200000 /* need to check/verify this later*/
+#endif
+
 #define MAP_UNINITIALIZED 0x4000000	/* For anonymous mmap, memory could be
 					 * uninitialized */
 

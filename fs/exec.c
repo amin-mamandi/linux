@@ -74,6 +74,7 @@
 #include "internal.h"
 
 #include <trace/events/sched.h>
+#include "dm_pages.h"
 
 static int bprm_creds_from_file(struct linux_binprm *bprm);
 
@@ -251,6 +252,12 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	struct vm_area_struct *vma = NULL;
 	struct mm_struct *mm = bprm->mm;
 
+#ifdef CONFIG_MMAP_OUTER_CACHE
+	bool deterministic = false;
+	if (bprm->filename && strstr(bprm->filename, "deterministic") != NULL)
+		deterministic = true;
+#endif
+
 	bprm->vma = vma = vm_area_alloc(mm);
 	if (!vma)
 		return -ENOMEM;
@@ -271,6 +278,10 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	vma->vm_end = STACK_TOP_MAX;
 	vma->vm_start = vma->vm_end - PAGE_SIZE;
 	vma->vm_flags = VM_SOFTDIRTY | VM_STACK_FLAGS | VM_STACK_INCOMPLETE_SETUP;
+#ifdef CONFIG_MMAP_OUTER_CACHE
+	if (deterministic)
+		vma->vm_flags |= VM_OUTERCACHE;
+#endif
 	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 
 	err = insert_vm_struct(mm, vma);
@@ -745,7 +756,8 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
  */
 int setup_arg_pages(struct linux_binprm *bprm,
 		    unsigned long stack_top,
-		    int executable_stack)
+		    int executable_stack, 
+			bool deterministic)
 {
 	unsigned long ret;
 	unsigned long stack_shift;
@@ -810,6 +822,10 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	else if (executable_stack == EXSTACK_DISABLE_X)
 		vm_flags &= ~VM_EXEC;
 	vm_flags |= mm->def_flags;
+#ifdef CONFIG_MMAP_OUTER_CACHE
+	if (deterministic)
+		vm_flags |= VM_OUTERCACHE;
+#endif
 	vm_flags |= VM_STACK_INCOMPLETE_SETUP;
 
 	tlb_gather_mmu(&tlb, mm);
@@ -1899,6 +1915,104 @@ static int do_execveat_common(int fd, struct filename *filename,
 		retval = -EAGAIN;
 		goto out_ret;
 	}
+
+#ifdef CONFIG_DETMEM_PALLOC
+	if (strstr(filename, "deterministic") != NULL) {
+		current->mm->dm_page_fault = true;
+		/* current->is_dm_task = true; */
+	}
+#endif
+
+#ifdef CONFIG_MMAP_OUTER_CACHE
+	current->dm_pages = NULL;
+
+	if (strstr(filename, "determ_top") != NULL) {
+		int ndmpgs_pos;
+		unsigned int n_dm_pages = 0;
+
+		ndmpgs_pos = argc - 2;
+		if (ndmpgs_pos > 0 &&
+		    strcmp(get_user_arg_ptr(argv, ndmpgs_pos), "--ndmpgs") == 0) {
+			const char __user *str;
+			
+			str = get_user_arg_ptr(argv, ndmpgs_pos + 1);
+			if (kstrtouint(str, 10, &n_dm_pages))
+				printk(KERN_WARNING "Could not parse the number of DM pages.\n");
+			argc -= 2;
+		}
+
+		printk("filename: %s", filename);
+
+		if (strstr(filename, "disparity_determ_top") != NULL) {
+			current->n_dm_pages = min(47u, n_dm_pages);
+			current->dm_pages = disparity_dm_pages;
+			printk(", disparity_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "mser_determ_top") != NULL) {
+			current->n_dm_pages = min(79u, n_dm_pages);
+			current->dm_pages = mser_dm_pages;
+			printk(", mser_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "sift_determ_top") != NULL) {
+			current->n_dm_pages = min(123u, n_dm_pages);
+			current->dm_pages = sift_dm_pages;
+			printk(", sift_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "svm_determ_top") != NULL) {
+			current->n_dm_pages = min(39u, n_dm_pages);
+			current->dm_pages = svm_dm_pages;
+			printk(", svm_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "texture_synthesis_determ_top") != NULL) {
+			current->n_dm_pages = min(47u, n_dm_pages);
+			current->dm_pages = texture_synth_dm_pages;
+			printk(", texture_synthesis_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "aifftr01_determ_top") != NULL) {
+			current->n_dm_pages = min(19u, n_dm_pages);
+			current->dm_pages = aifftr01_dm_pages;
+			printk(", aifftr01_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "aiifft01_determ_top") != NULL) {
+			current->n_dm_pages = min(17u, n_dm_pages);
+			current->dm_pages = aiifft01_dm_pages;
+			printk(", aiifft01_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "matrix01_determ_top") != NULL) {
+			current->n_dm_pages = min(22u, n_dm_pages);
+			current->dm_pages = matrix01_dm_pages;
+			printk(", matrix01_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		// CIF
+		else if (strstr(filename, "disparity_cif_determ_top") != NULL) {
+			current->n_dm_pages = min(1022u, n_dm_pages);
+			current->dm_pages = disparity_cif_dmpgs;
+			printk(", disparity_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "mser_cif_determ_top") != NULL) {
+			current->n_dm_pages = min(987u, n_dm_pages);
+			current->dm_pages = mser_cif_dmpgs;
+			printk(", mser_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "sift_cif_determ_top") != NULL) {
+			current->n_dm_pages = min(8092u, n_dm_pages);
+			current->dm_pages = sift_cif_dmpgs;
+			printk(", sift_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "svm_cif_determ_top") != NULL) {
+			current->n_dm_pages = min(113u, n_dm_pages);
+			current->dm_pages = svm_cif_dmpgs;
+			printk(", svm_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else if (strstr(filename, "texture_synthesis_cif_determ_top") != NULL) {
+			current->n_dm_pages = min(362u, n_dm_pages);
+			current->dm_pages = texture_synth_cif_dmpgs;
+			printk(", texture_synthesis_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
+		}
+		else
+			printk(", is not recognized.\n");
+	}
+#endif
 
 	/* We're below the limit (still or again), so we don't want to make
 	 * further execve() calls fail. */

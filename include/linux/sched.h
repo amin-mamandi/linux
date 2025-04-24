@@ -1446,6 +1446,14 @@ struct task_struct {
 	unsigned int			sequential_io;
 	unsigned int			sequential_io_avg;
 #endif
+#if 0
+	bool is_dm_task;
+#endif
+#ifdef CONFIG_MMAP_OUTER_CACHE
+	const unsigned long *dm_pages;
+	unsigned int n_dm_pages;
+	bool dm_page_fault;
+#endif
 	struct kmap_ctrl		kmap_ctrl;
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 	unsigned long			task_state_change;
