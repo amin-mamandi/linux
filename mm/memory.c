@@ -4936,7 +4936,7 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		       address); */
 #endif
 
-	entry = *pte;
+	entry = *vmf->pte;
 
 	if (unlikely(pmd_none(*vmf->pmd))) {
 		/*
