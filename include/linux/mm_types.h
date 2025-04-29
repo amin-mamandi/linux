@@ -651,7 +651,7 @@ struct mm_struct {
 #endif
 		int map_count;			/* number of VMAs */
 
-#if 0 
+#if 1 
 		bool dm_page_fault;
 #endif
 
