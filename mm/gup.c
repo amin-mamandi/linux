@@ -1234,7 +1234,6 @@ next_page:
 		if (vma->vm_flags & VM_OUTERCACHE) {
 			page_table = get_pte(start, mm, gup_flags);
 			entry = pte_mkdetmem(*page_table);
-			// entry = pte_mkspecial(*page_table);
 			set_pte_at(mm, start, page_table, entry);
 			printk("__get_user_pages ==  vma_start = 0x%08lx; pte_val = 0x%08lx; vm_flags = 0x%08lx\n", 
 				vma->vm_start, pte_val(entry), vma->vm_flags);
