@@ -1,6 +1,6 @@
 #ifdef CONFIG_MMAP_OUTER_CACHE
 // disparity
-const unsigned long disparity_dm_pages[47] = {	0x75c1d,
+const unsigned long disparity_dm_pages[42] = {	0x75c1d,
 						0x75c1b,
 						0x75c1f,
 						0x75c25,
@@ -41,12 +41,7 @@ const unsigned long disparity_dm_pages[47] = {	0x75c1d,
 						0x75bff,
 						0x75c05,
 						0x75c04,
-						0x75c03,
-						0x00085,
-						0x00013,
-						0x00012,
-						0x00011,
-						0x00010};                                                        
+						0x75c03};                                                        
 
 // mser
 const unsigned long mser_dm_pages[79] = {	0x75c5a,

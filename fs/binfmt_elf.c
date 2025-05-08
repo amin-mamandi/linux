@@ -1083,8 +1083,9 @@ out_free_interp:
 
 		elf_flags = MAP_PRIVATE;
 
-		if(deterministic)
+		if(deterministic){
 		   elf_flags |= MAP_OUTER_CACHE;
+		}
 
 		vaddr = elf_ppnt->p_vaddr;
 		/*

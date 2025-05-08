@@ -1417,8 +1417,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 				return -EINVAL;
 #endif
 		vm_flags |= VM_OUTERCACHE;
-
-		printk("== (%s %d) OUTER CACHE mmap for %s - vm_flags = 0x%08lx;\n", 
+		printk("do_mmap == (%s %d) OUTER CACHE mmap for %s - vm_flags = 0x%08lx;\n", 
 				__FILE__, __LINE__, 
 				current->comm, vm_flags); 
 		}		
@@ -3036,8 +3035,9 @@ int vm_brk_flags(unsigned long addr, unsigned long request, unsigned long flags,
 #if 0
     printk("vm_brk pid:%d dm:%d\n", current->pid, deterministic);
 #endif
-	if (deterministic)
+	if (deterministic){
 		mm->def_flags |= VM_OUTERCACHE;
+	}
 
 	len = PAGE_ALIGN(request);
 	if (len < request)

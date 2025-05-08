@@ -254,8 +254,9 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
 	bool deterministic = false;
-	if (bprm->filename && strstr(bprm->filename, "deterministic") != NULL)
+	if (bprm->filename && strstr(bprm->filename, "deterministic") != NULL){
 		deterministic = true;
+	}
 #endif
 
 	bprm->vma = vma = vm_area_alloc(mm);
@@ -281,6 +282,7 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 #ifdef CONFIG_MMAP_OUTER_CACHE
 	if (deterministic)
 		vma->vm_flags |= VM_OUTERCACHE;
+	
 #endif
 	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 
@@ -825,6 +827,7 @@ int setup_arg_pages(struct linux_binprm *bprm,
 #ifdef CONFIG_MMAP_OUTER_CACHE
 	if (deterministic)
 		vm_flags |= VM_OUTERCACHE;
+	
 #endif
 	vm_flags |= VM_STACK_INCOMPLETE_SETUP;
 
@@ -1919,7 +1922,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 #ifdef CONFIG_DETMEM_PALLOC
     if (strstr(filename->name, "deterministic") != NULL) {
         current->mm->dm_page_fault = true;
-        /* current->is_dm_task = true; */
     }
 #endif
 
@@ -1935,22 +1937,33 @@ static int do_execveat_common(int fd, struct filename *filename,
         while (get_user_arg_ptr(argv, count) != NULL)
             count++;
         
-        ndmpgs_pos = count - 2;
-        if (ndmpgs_pos > 0 &&
-            strcmp(get_user_arg_ptr(argv, ndmpgs_pos), "--ndmpgs") == 0) {
-            const char __user *str;
-            
-            str = get_user_arg_ptr(argv, ndmpgs_pos + 1);
-            // For kstrtouint_from_user, we need to provide string length and base
-            // Assuming string length of 20 should be more than enough for number of pages
-            if (kstrtouint_from_user(str, 20, 10, &n_dm_pages))
-                printk(KERN_WARNING "Could not parse the number of DM pages.\n");
-        }
-        
-        printk("filename: %s", filename->name);
+		ndmpgs_pos = count - 2;
+		if (ndmpgs_pos > 0) {
+			char kernel_buf[32];
+			const char __user *user_str = get_user_arg_ptr(argv, ndmpgs_pos);
+			
+			if (user_str && !strncpy_from_user(kernel_buf, user_str, sizeof(kernel_buf) - 1)) {
+				kernel_buf[sizeof(kernel_buf) - 1] = '\0';
+				
+				if (strcmp(kernel_buf, "--ndmpgs") == 0) {
+					printk("Found --ndmpgs argument\n");
+					const char __user *value_str = get_user_arg_ptr(argv, ndmpgs_pos + 1);
+					if (value_str) {
+						if (kstrtouint_from_user(value_str, 20, 10, &n_dm_pages))
+							printk(KERN_WARNING "Could not parse the number of DM pages.\n");
+					}
+				}
+			}
+		}	
+	
+        printk("ilename: %s", filename->name);
 
 		if (strstr(filename->name, "disparity_determ_top") != NULL) {
-			current->n_dm_pages = min(47u, n_dm_pages);
+			// for debugging
+			n_dm_pages = 4;
+			current->n_dm_pages = n_dm_pages;
+
+			current->n_dm_pages = min(42u, n_dm_pages);
 			current->dm_pages = disparity_dm_pages;
 			printk(", disparity_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
 		}

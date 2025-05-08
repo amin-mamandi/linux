@@ -568,8 +568,19 @@ struct page *vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 	unsigned long pfn = pte_pfn(pte);
 
 	if (IS_ENABLED(CONFIG_ARCH_HAS_PTE_SPECIAL)) {
-		if (likely(!pte_special(pte)))
+		if (likely(!pte_special(pte)	
+#ifdef CONFIG_MMAP_OUTER_CACHE
+		&& !pte_detmem(pte)
+#endif
+))
 			goto check_pfn;
+#ifdef CONFIG_MMAP_OUTER_CACHE
+        // If it's a deterministic memory page, handle it like a normal page
+        if (pte_detmem(pte)){
+			printk("vm_normal_page == DetMem page found\n");
+            goto check_pfn;
+		}
+#endif
 		if (vma->vm_ops && vma->vm_ops->find_special_page)
 			return vma->vm_ops->find_special_page(vma, addr);
 		if (vma->vm_flags & (VM_PFNMAP | VM_MIXEDMAP))
@@ -3143,11 +3154,9 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		}
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
-		if ((vma->vm_flags & VM_OUTERCACHE) || current->dm_page_fault) {
+		if ((vma->vm_flags & VM_OUTERCACHE) || current->dm_page_fault)
 			entry = pte_mkdetmem(entry);
-			/* printk("== OUTER (wp_page) for address = 0x%08lx; pte_val = 0x%08lx\n",
-			        address, (unsigned long)pte_val(entry)); */
-		}
+		
 #endif
 		/*
 		 * Clear the pte entry and flush it first, before updating the
@@ -4102,16 +4111,10 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		entry = pte_mkwrite(pte_mkdirty(entry));
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
-		/* If this VM was allocated as an outer cacheable page, modify
-			* the PTE entry to reflect this setting */
-		printk("== ANON for vma_start = 0x%lx; pte_val = 0x%lx; vm_flags = 0x%lx\n", 
-			vma->vm_start, pte_val(entry), vma->vm_flags);
-	
-		if (vma->vm_flags & VM_OUTERCACHE || current->dm_page_fault) {
-			entry = pte_mkdetmem(entry);
-			printk("== OUTER (linear) for vma_start = 0x%08lx; pte_val = 0x%08x\n",
-				vma->vm_start, (u32)pte_val(entry));		 
-		}
+	/* If this VM was allocated as an outer cacheable page, modify
+		* the PTE entry to reflect this setting */
+	if (vma->vm_flags & VM_OUTERCACHE || current->dm_page_fault) 
+		entry = pte_mkdetmem(entry);
 #endif
 
 	vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
@@ -4333,12 +4336,9 @@ void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr)
 #ifdef CONFIG_MMAP_OUTER_CACHE
 		/* If this VM was allocated as an outer cacheable page, modify
 		 * the PTE entry to reflect this setting */
-		
-		if ((vma->vm_flags & VM_OUTERCACHE) || current->dm_page_fault) {
+		if ((vma->vm_flags & VM_OUTERCACHE) || current->dm_page_fault) 
 			entry = pte_mkdetmem(entry);
-			/* printk("== OUTER (linear) for vma_start = 0x%08lx; pte_val = 0x%08lx\n", */
-			/*        vma->vm_start, (u32)pte_val(entry)); */
-		}
+		
 #endif
 	
 
@@ -4415,7 +4415,6 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 
 	/* Re-check under ptl */
 	if (likely(!vmf_pte_changed(vmf))) {
-
 		do_set_pte(vmf, page, vmf->address);
 
 		/* no need to invalidate: a not-present page won't be cached */
@@ -4918,22 +4917,20 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 
     if ((dm_pages = current->dm_pages)) {
         int i;
-        for (i = 0; i < current->n_dm_pages; i++)
-            if (vmf->address >> PAGE_SHIFT == dm_pages[i]) {
+        unsigned long page_num = vmf->address >> PAGE_SHIFT;
+        
+        // Add logging here to track when DM pages are used
+        for (i = 0; i < current->n_dm_pages; i++) {
+            if (page_num == dm_pages[i]) {
+                printk("DM page hit == Process %s using DM page %d (0x%08lx) for address 0x%08lx\n", 
+                       current->comm, i, dm_pages[i], vmf->address);
                 is_dm_page = true;
-                // printk("address: %08lx\n", vmf->address);
                 break;
             }
+        }
     }
+    
     current->dm_page_fault = is_dm_page || (vmf->vma->vm_flags & VM_OUTERCACHE);
-#endif
-
-#if 0
-	current->dm_page_fault = vma->vm_flags & VM_OUTERCACHE ? true : false;
-	/* if (current->is_dm_task)
-		printk("*dm pte * dm_page_fault:%d va:0x%08lx\n",
-		       current->dm_page_fault,
-		       address); */
 #endif
 
 	entry = *vmf->pte;
@@ -5015,10 +5012,8 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 	}
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
-
 	/* current->dm_page_fault = false; */
 	vmf->vma->vm_mm->dm_page_fault = false;
-
 #endif
 
 	entry = pte_mkyoung(entry);

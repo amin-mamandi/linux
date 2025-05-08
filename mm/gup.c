@@ -1045,6 +1045,7 @@ inline pte_t* get_pte(unsigned long start,
     BUG_ON(pud_none(*pud));
     
     pmd = pmd_offset(pud, pg);
+
     return pte_offset_map(pmd, pg);
 }
 
@@ -1233,7 +1234,10 @@ next_page:
 		if (vma->vm_flags & VM_OUTERCACHE) {
 			page_table = get_pte(start, mm, gup_flags);
 			entry = pte_mkdetmem(*page_table);
+			// entry = pte_mkspecial(*page_table);
 			set_pte_at(mm, start, page_table, entry);
+			printk("__get_user_pages ==  vma_start = 0x%08lx; pte_val = 0x%08lx; vm_flags = 0x%08lx\n", 
+				vma->vm_start, pte_val(entry), vma->vm_flags);
 		}
 #endif
 		page_increm = 1 + (~(start >> PAGE_SHIFT) & ctx.page_mask);
