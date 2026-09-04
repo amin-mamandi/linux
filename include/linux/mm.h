@@ -304,10 +304,6 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_WIPEONFORK	0x02000000	/* Wipe VMA contents in child. */
 #define VM_DONTDUMP	0x04000000	/* Do not include in the core dump */
 
-#ifdef CONFIG_MMAP_OUTER_CACHE
-#define VM_OUTERCACHE   0x08000000     /* Do not cache this VM in private cache levels  */
-#endif
-
 #ifdef CONFIG_MEM_SOFT_DIRTY
 # define VM_SOFTDIRTY	0x08000000	/* Not soft dirty clean area */
 #else
@@ -331,6 +327,21 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_HIGH_ARCH_3	BIT(VM_HIGH_ARCH_BIT_3)
 #define VM_HIGH_ARCH_4	BIT(VM_HIGH_ARCH_BIT_4)
 #endif /* CONFIG_ARCH_USES_HIGH_VMA_FLAGS */
+
+#ifdef CONFIG_MMAP_OUTER_CACHE
+/*
+ * Deterministic-memory (outer-cacheable only) mapping.
+ *
+ * This deliberately lives above bit 31: every free flag in the low word is
+ * already claimed on some configuration (bit 27 is VM_SOFTDIRTY), and it is
+ * placed above VM_HIGH_ARCH_BIT_4 so it cannot collide with the arch pkey or
+ * MTE bits either.  CONFIG_MMAP_OUTER_CACHE depends on 64BIT so that
+ * vm_flags_t is wide enough to hold it.
+ */
+#define VM_OUTERCACHE	BIT(37)
+#else
+#define VM_OUTERCACHE	0
+#endif
 
 #ifdef CONFIG_ARCH_HAS_PKEYS
 # define VM_PKEY_SHIFT	VM_HIGH_ARCH_BIT_0
@@ -2888,8 +2899,8 @@ static inline void mm_populate(unsigned long addr, unsigned long len) {}
 #endif
 
 /* These take the mm semaphore themselves */
-extern int __must_check vm_brk(unsigned long, unsigned long, bool);
-extern int __must_check vm_brk_flags(unsigned long, unsigned long, unsigned long, bool);
+extern int __must_check vm_brk(unsigned long, unsigned long);
+extern int __must_check vm_brk_flags(unsigned long, unsigned long, unsigned long);
 extern int vm_munmap(unsigned long, size_t);
 extern unsigned long __must_check vm_mmap(struct file *, unsigned long,
         unsigned long, unsigned long,

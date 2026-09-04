@@ -1408,20 +1408,9 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			vm_flags |= VM_NORESERVE;
 	}
 
-#ifdef CONFIG_MMAP_OUTER_CACHE
-
-		/* If needed, mark the VM for outer caching policy */
-		if (flags & MAP_OUTER_CACHE) {
-#if 0
-			if (!(flags & MAP_SHARED))
-				return -EINVAL;
-#endif
+	/* Mark the mapping as deterministic (outer-cacheable only) memory. */
+	if (IS_ENABLED(CONFIG_MMAP_OUTER_CACHE) && (flags & MAP_OUTER_CACHE))
 		vm_flags |= VM_OUTERCACHE;
-		printk("do_mmap == (%s %d) OUTER CACHE mmap for %s - vm_flags = 0x%08lx;\n", 
-				__FILE__, __LINE__, 
-				current->comm, vm_flags); 
-		}		
-#endif
 
 	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
@@ -3021,8 +3010,7 @@ unacct_fail:
 	return -ENOMEM;
 }
 
-int vm_brk_flags(unsigned long addr, unsigned long request, unsigned long flags, 
-				 bool deterministic)
+int vm_brk_flags(unsigned long addr, unsigned long request, unsigned long flags)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = NULL;
@@ -3032,25 +3020,22 @@ int vm_brk_flags(unsigned long addr, unsigned long request, unsigned long flags,
 	LIST_HEAD(uf);
 	MA_STATE(mas, &mm->mm_mt, addr, addr);
 
-#if 0
-    printk("vm_brk pid:%d dm:%d\n", current->pid, deterministic);
-#endif
-	if (deterministic){
-		mm->def_flags |= VM_OUTERCACHE;
-	}
-
 	len = PAGE_ALIGN(request);
 	if (len < request)
 		return -ENOMEM;
 	if (!len)
 		return 0;
 
+	/*
+	 * Until we need other flags, refuse anything except VM_EXEC and, when
+	 * the deterministic-memory extension is built in, VM_OUTERCACHE.
+	 * Checked before taking mmap_lock so the error path cannot leak it.
+	 */
+	if ((flags & ~(VM_EXEC | VM_OUTERCACHE)) != 0)
+		return -EINVAL;
+
 	if (mmap_write_lock_killable(mm))
 		return -EINTR;
-
-	/* Until we need other flags, refuse anything except VM_EXEC. */
-	if ((flags & (~VM_EXEC)) != 0)
-		return -EINVAL;
 
 	ret = check_brk_limits(addr, len);
 	if (ret)
@@ -3076,9 +3061,9 @@ limits_failed:
 }
 EXPORT_SYMBOL(vm_brk_flags);
 
-int vm_brk(unsigned long addr, unsigned long len, bool deterministic)
+int vm_brk(unsigned long addr, unsigned long len)
 {
-	return vm_brk_flags(addr, len, 0, deterministic);
+	return vm_brk_flags(addr, len, 0);
 }
 EXPORT_SYMBOL(vm_brk);
 

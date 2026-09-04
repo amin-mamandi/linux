@@ -1446,13 +1446,15 @@ struct task_struct {
 	unsigned int			sequential_io;
 	unsigned int			sequential_io_avg;
 #endif
-#if 0
-	bool is_dm_task;
-#endif
 #ifdef CONFIG_MMAP_OUTER_CACHE
-	const unsigned long *dm_pages;
-	unsigned int n_dm_pages;
-	bool dm_page_fault;
+	/* Deterministic-memory page table selected for this task by execve(). */
+	const unsigned long		*dm_pages;
+	unsigned int			n_dm_pages;
+	/* Inclusive VPN bounds of dm_pages[0 .. n_dm_pages), for fast rejection. */
+	unsigned long			dm_page_min;
+	unsigned long			dm_page_max;
+	/* Set by handle_pte_fault() for the fault currently being serviced. */
+	bool				dm_page_fault;
 #endif
 	struct kmap_ctrl		kmap_ctrl;
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP

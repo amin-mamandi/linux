@@ -2998,7 +2998,7 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 		iters++;
 
 		/* Search the entire list. Make color cache in the process */
-		for (current_order = 0; current_order <= MAX_ORDER; ++current_order) {
+		for (current_order = 0; current_order < MAX_ORDER; ++current_order) {
 			area = &(zone->free_area[current_order]);
 
 			if (list_empty(&area->free_list[migratetype]))
@@ -3026,21 +3026,10 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 normal_buddy_alloc:
 		/* Normal Buddy Algorithm */
 		/* Find a page of the specified size in the preferred list */
-		for (current_order = order; current_order <= MAX_ORDER; ++current_order) {
+		for (current_order = order; current_order < MAX_ORDER; ++current_order) {
 			area = &(zone->free_area[current_order]);
 			iters++;
 
-/*			if (list_empty(&area->free_list[migratetype]))
-				continue;
-
-			page = list_entry(area->free_list[migratetype].next, struct page, lru);
-
-			list_del(&page->lru);
-			rmv_page_order(page);
-			area->nr_free--;
-			expand(zone, page, order, current_order, area, migratetype);
-*/
-	
 			page = get_page_from_free_area(area, migratetype);
 			if (!page)
 				continue;
@@ -4342,7 +4331,9 @@ struct page *rmqueue(struct zone *preferred_zone,
 			int migratetype)
 {
 	struct page *page;
+#ifdef CONFIG_CGROUP_PALLOC
 	struct palloc *ph;
+#endif
 
 	/*
 	 * We most definitely don't want callers attempting to
@@ -4355,9 +4346,8 @@ struct page *rmqueue(struct zone *preferred_zone,
 	/* Skip PCP when physical memory aware allocation is requested */
 	if (likely(pcp_allowed_order(order)) && !ph) {
 #else
- 	if (likely(pcp_allowed_order(order))) {
+	if (likely(pcp_allowed_order(order))) {
 #endif
-
 		/*
 		 * MIGRATE_MOVABLE pcplist could have the pages on CMA area and
 		 * we need to skip it when CMA area isn't allowed.
@@ -6124,7 +6114,6 @@ EXPORT_SYMBOL(__folio_alloc);
 unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
 {
 	struct page *page;
-	struct palloc *ph;
 
 	page = alloc_pages(gfp_mask & ~__GFP_HIGHMEM, order);
 	if (!page)

@@ -1,6 +1,6 @@
 #ifdef CONFIG_MMAP_OUTER_CACHE
 // disparity
-const unsigned long disparity_dm_pages[42] = {	0x75c1d,
+static const unsigned long disparity_dm_pages[42] = {	0x75c1d,
 						0x75c1b,
 						0x75c1f,
 						0x75c25,
@@ -44,7 +44,7 @@ const unsigned long disparity_dm_pages[42] = {	0x75c1d,
 						0x75c03};                                                        
 
 // mser
-const unsigned long mser_dm_pages[79] = {	0x75c5a,
+static const unsigned long mser_dm_pages[79] = {	0x75c5a,
 						0x75c55,
 						0x75c5c,
 						0x75c6b,
@@ -125,7 +125,7 @@ const unsigned long mser_dm_pages[79] = {	0x75c5a,
 						0x00012};                                                        
 													
 // sift
-const unsigned long sift_dm_pages[123] = {	0x75c03,
+static const unsigned long sift_dm_pages[123] = {	0x75c03,
 						0x75c02,
 						0x75c00,
 						0x75c11,
@@ -250,7 +250,7 @@ const unsigned long sift_dm_pages[123] = {	0x75c03,
 						0x75ea5};
 
 // svm
-const unsigned long svm_dm_pages[39] = {	0x75e25,
+static const unsigned long svm_dm_pages[39] = {	0x75e25,
 						0x75e28,
 						0x75e26,
 						0x75e24,
@@ -291,7 +291,7 @@ const unsigned long svm_dm_pages[39] = {	0x75e25,
 						0x00012};
 
 // texture_synth
-const unsigned long texture_synth_dm_pages[47] = {0x75c2424,
+static const unsigned long texture_synth_dm_pages[47] = {0x75c2424,
 						0x00087,
 						0x00013,
 						0x75c25,
@@ -340,7 +340,7 @@ const unsigned long texture_synth_dm_pages[47] = {0x75c2424,
 						0x00012};
 
 // aifftr01
-const unsigned long aifftr01_dm_pages[19] = {	0x000b7,
+static const unsigned long aifftr01_dm_pages[19] = {	0x000b7,
 						0x76201,
 						0x76200,
 						0x761fe,
@@ -361,7 +361,7 @@ const unsigned long aifftr01_dm_pages[19] = {	0x000b7,
 						0x0003c};
 
 // aiifft01
-const unsigned long aiifft01_dm_pages[17] = {	0x000b7,
+static const unsigned long aiifft01_dm_pages[17] = {	0x000b7,
 						0x000b6,
 						0x000b2,
 						0x7efff,
@@ -380,7 +380,7 @@ const unsigned long aiifft01_dm_pages[17] = {	0x000b7,
 						0x76202};
 
 // matrix01
-const unsigned long matrix01_dm_pages[22] = {	0x76209,
+static const unsigned long matrix01_dm_pages[22] = {	0x76209,
 						0x76207,
 						0x76208,
 						0x76205,
@@ -403,7 +403,7 @@ const unsigned long matrix01_dm_pages[22] = {	0x76209,
 						0x00010,
 						0x00014};
 
-const unsigned long disparity_cif_dmpgs[1022] = {0x75ec5,
+static const unsigned long disparity_cif_dmpgs[1022] = {0x75ec5,
 						0x75ee5,
 						0x75eec,
 						0x75ef1,
@@ -1426,7 +1426,7 @@ const unsigned long disparity_cif_dmpgs[1022] = {0x75ec5,
 						0x00012,
 						0x00010};
 
-const unsigned long mser_cif_dmpgs[987] = {	0x762c3,
+static const unsigned long mser_cif_dmpgs[987] = {	0x762c3,
 						0x762c0,
 						0x762c2,
 						0x762c4,
@@ -2414,7 +2414,7 @@ const unsigned long mser_cif_dmpgs[987] = {	0x762c3,
 						0x00028,
 						0x00012};
 
-const unsigned long sift_cif_dmpgs[8092] = {	0x7efff,
+static const unsigned long sift_cif_dmpgs[8092] = {	0x7efff,
 						0x7517d,
 						0x75270,
 						0x75039,
@@ -10507,7 +10507,7 @@ const unsigned long sift_cif_dmpgs[8092] = {	0x7efff,
 						0x768c8,
 						0x00065};
 
-const unsigned long svm_cif_dmpgs[113] = {	0x75e3f,
+static const unsigned long svm_cif_dmpgs[113] = {	0x75e3f,
 						0x75e28,
 						0x75e25,
 						0x75e26,
@@ -10621,7 +10621,7 @@ const unsigned long svm_cif_dmpgs[113] = {	0x75e3f,
 						0x75db3,
 						0x00010};
 
-const unsigned long texture_synth_cif_dmpgs[362] = {0x7efff,
+static const unsigned long texture_synth_cif_dmpgs[362] = {0x7efff,
 						0x75d60,
 						0x75d5f,
 						0x75d61,

@@ -252,12 +252,9 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	struct vm_area_struct *vma = NULL;
 	struct mm_struct *mm = bprm->mm;
 
-#ifdef CONFIG_MMAP_OUTER_CACHE
-	bool deterministic = false;
-	if (bprm->filename && strstr(bprm->filename, "deterministic") != NULL){
-		deterministic = true;
-	}
-#endif
+	bool deterministic = IS_ENABLED(CONFIG_MMAP_OUTER_CACHE) &&
+			     bprm->filename &&
+			     strstr(bprm->filename, "deterministic") != NULL;
 
 	bprm->vma = vma = vm_area_alloc(mm);
 	if (!vma)
@@ -279,11 +276,8 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	vma->vm_end = STACK_TOP_MAX;
 	vma->vm_start = vma->vm_end - PAGE_SIZE;
 	vma->vm_flags = VM_SOFTDIRTY | VM_STACK_FLAGS | VM_STACK_INCOMPLETE_SETUP;
-#ifdef CONFIG_MMAP_OUTER_CACHE
 	if (deterministic)
 		vma->vm_flags |= VM_OUTERCACHE;
-	
-#endif
 	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 
 	err = insert_vm_struct(mm, vma);
@@ -758,8 +752,8 @@ static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
  */
 int setup_arg_pages(struct linux_binprm *bprm,
 		    unsigned long stack_top,
-		    int executable_stack, 
-			bool deterministic)
+		    int executable_stack,
+		    unsigned long extra_vm_flags)
 {
 	unsigned long ret;
 	unsigned long stack_shift;
@@ -824,11 +818,7 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	else if (executable_stack == EXSTACK_DISABLE_X)
 		vm_flags &= ~VM_EXEC;
 	vm_flags |= mm->def_flags;
-#ifdef CONFIG_MMAP_OUTER_CACHE
-	if (deterministic)
-		vm_flags |= VM_OUTERCACHE;
-	
-#endif
+	vm_flags |= extra_vm_flags;
 	vm_flags |= VM_STACK_INCOMPLETE_SETUP;
 
 	tlb_gather_mmu(&tlb, mm);
@@ -1896,6 +1886,135 @@ out_unmark:
 	return retval;
 }
 
+#ifdef CONFIG_MMAP_OUTER_CACHE
+/*
+ * Per-benchmark tables of "deterministic memory" virtual page numbers.  The
+ * entries are ordered most-accessed first, so a request for N pages takes the
+ * first N entries; the tables must not be sorted.
+ */
+struct dm_page_set {
+	const char *name;
+	const unsigned long *pages;
+	unsigned int count;
+};
+
+#define DM_PAGE_SET(bench, array) \
+	{ .name = (bench), .pages = (array), .count = ARRAY_SIZE(array) }
+
+static const struct dm_page_set dm_page_sets[] = {
+	/* CIF variants first: match the most specific name available. */
+	DM_PAGE_SET("disparity_cif_determ_top", disparity_cif_dmpgs),
+	DM_PAGE_SET("mser_cif_determ_top", mser_cif_dmpgs),
+	DM_PAGE_SET("sift_cif_determ_top", sift_cif_dmpgs),
+	DM_PAGE_SET("svm_cif_determ_top", svm_cif_dmpgs),
+	DM_PAGE_SET("texture_synthesis_cif_determ_top", texture_synth_cif_dmpgs),
+	DM_PAGE_SET("disparity_determ_top", disparity_dm_pages),
+	DM_PAGE_SET("mser_determ_top", mser_dm_pages),
+	DM_PAGE_SET("sift_determ_top", sift_dm_pages),
+	DM_PAGE_SET("svm_determ_top", svm_dm_pages),
+	DM_PAGE_SET("texture_synthesis_determ_top", texture_synth_dm_pages),
+	DM_PAGE_SET("aifftr01_determ_top", aifftr01_dm_pages),
+	DM_PAGE_SET("aiifft01_determ_top", aiifft01_dm_pages),
+	DM_PAGE_SET("matrix01_determ_top", matrix01_dm_pages),
+};
+
+#undef DM_PAGE_SET
+
+/*
+ * Parse the "--ndmpgs <n>" pair that the benchmark harness appends as the last
+ * two arguments.  Returns 0 when the option is absent or unparsable, which
+ * leaves the task with no deterministic pages.
+ */
+static unsigned int dm_parse_ndmpgs(struct user_arg_ptr argv)
+{
+	const char __user *user_str;
+	unsigned int n_dm_pages = 0;
+	char kernel_buf[32];
+	int argc, pos;
+	long len;
+
+	argc = count(argv, MAX_ARG_STRINGS);
+	if (argc < 2)
+		return 0;
+
+	pos = argc - 2;
+	user_str = get_user_arg_ptr(argv, pos);
+	if (IS_ERR_OR_NULL(user_str))
+		return 0;
+
+	len = strncpy_from_user(kernel_buf, user_str, sizeof(kernel_buf));
+	if (len <= 0 || len >= (long)sizeof(kernel_buf))
+		return 0;
+
+	if (strcmp(kernel_buf, "--ndmpgs") != 0)
+		return 0;
+
+	user_str = get_user_arg_ptr(argv, pos + 1);
+	if (IS_ERR_OR_NULL(user_str))
+		return 0;
+
+	if (kstrtouint_from_user(user_str, 20, 10, &n_dm_pages)) {
+		pr_warn("detmem: could not parse the number of DM pages\n");
+		return 0;
+	}
+
+	return n_dm_pages;
+}
+
+static void dm_pages_setup(const char *name, struct user_arg_ptr argv)
+{
+	const struct dm_page_set *set = NULL;
+	unsigned int n_dm_pages;
+	unsigned long lo, hi;
+	size_t i;
+
+	current->dm_pages = NULL;
+	current->n_dm_pages = 0;
+	current->dm_page_min = 0;
+	current->dm_page_max = 0;
+
+	if (!strstr(name, "determ_top"))
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(dm_page_sets); i++) {
+		if (strstr(name, dm_page_sets[i].name)) {
+			set = &dm_page_sets[i];
+			break;
+		}
+	}
+
+	if (!set) {
+		pr_info("detmem: %s has no deterministic page table\n", name);
+		return;
+	}
+
+	n_dm_pages = min(set->count, dm_parse_ndmpgs(argv));
+	if (!n_dm_pages) {
+		pr_info("detmem: %s selected but --ndmpgs is absent or zero\n",
+			set->name);
+		return;
+	}
+
+	/*
+	 * Cache the bounds of the selected prefix so the page-fault path can
+	 * reject the common miss in O(1) instead of scanning the whole table.
+	 */
+	lo = hi = set->pages[0];
+	for (i = 1; i < n_dm_pages; i++) {
+		lo = min(lo, set->pages[i]);
+		hi = max(hi, set->pages[i]);
+	}
+
+	current->dm_pages = set->pages;
+	current->n_dm_pages = n_dm_pages;
+	current->dm_page_min = lo;
+	current->dm_page_max = hi;
+
+	pr_info("detmem: %s, n_dm_pages: %u (vpn 0x%lx-0x%lx)\n",
+		set->name, n_dm_pages, lo, hi);
+}
+#endif /* CONFIG_MMAP_OUTER_CACHE */
+
 static int do_execveat_common(int fd, struct filename *filename,
 			      struct user_arg_ptr argv,
 			      struct user_arg_ptr envp,
@@ -1919,118 +2038,8 @@ static int do_execveat_common(int fd, struct filename *filename,
 		goto out_ret;
 	}
 
-#ifdef CONFIG_DETMEM_PALLOC
-    if (strstr(filename->name, "deterministic") != NULL) {
-        current->mm->dm_page_fault = true;
-    }
-#endif
-
 #ifdef CONFIG_MMAP_OUTER_CACHE
-	current->dm_pages = NULL;
-
-    if (strstr(filename->name, "determ_top") != NULL) {
-        int ndmpgs_pos;
-        unsigned int n_dm_pages = 0;
-        int count = 0;
-        
-        // Count arguments properly
-        while (get_user_arg_ptr(argv, count) != NULL)
-            count++;
-        
-		ndmpgs_pos = count - 2;
-		if (ndmpgs_pos > 0) {
-			char kernel_buf[32];
-			const char __user *user_str = get_user_arg_ptr(argv, ndmpgs_pos);
-			
-			if (user_str && !strncpy_from_user(kernel_buf, user_str, sizeof(kernel_buf) - 1)) {
-				kernel_buf[sizeof(kernel_buf) - 1] = '\0';
-				
-				if (strcmp(kernel_buf, "--ndmpgs") == 0) {
-					printk("Found --ndmpgs argument\n");
-					const char __user *value_str = get_user_arg_ptr(argv, ndmpgs_pos + 1);
-					if (value_str) {
-						if (kstrtouint_from_user(value_str, 20, 10, &n_dm_pages))
-							printk(KERN_WARNING "Could not parse the number of DM pages.\n");
-					}
-				}
-			}
-		}	
-	
-        printk("ilename: %s", filename->name);
-
-		if (strstr(filename->name, "disparity_determ_top") != NULL) {
-			// for debugging
-			n_dm_pages = 4;
-			current->n_dm_pages = n_dm_pages;
-
-			current->n_dm_pages = min(42u, n_dm_pages);
-			current->dm_pages = disparity_dm_pages;
-			printk(", disparity_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "mser_determ_top") != NULL) {
-			current->n_dm_pages = min(79u, n_dm_pages);
-			current->dm_pages = mser_dm_pages;
-			printk(", mser_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "sift_determ_top") != NULL) {
-			current->n_dm_pages = min(123u, n_dm_pages);
-			current->dm_pages = sift_dm_pages;
-			printk(", sift_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "svm_determ_top") != NULL) {
-			current->n_dm_pages = min(39u, n_dm_pages);
-			current->dm_pages = svm_dm_pages;
-			printk(", svm_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "texture_synthesis_determ_top") != NULL) {
-			current->n_dm_pages = min(47u, n_dm_pages);
-			current->dm_pages = texture_synth_dm_pages;
-			printk(", texture_synthesis_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "aifftr01_determ_top") != NULL) {
-			current->n_dm_pages = min(19u, n_dm_pages);
-			current->dm_pages = aifftr01_dm_pages;
-			printk(", aifftr01_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "aiifft01_determ_top") != NULL) {
-			current->n_dm_pages = min(17u, n_dm_pages);
-			current->dm_pages = aiifft01_dm_pages;
-			printk(", aiifft01_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "matrix01_determ_top") != NULL) {
-			current->n_dm_pages = min(22u, n_dm_pages);
-			current->dm_pages = matrix01_dm_pages;
-			printk(", matrix01_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		// CIF
-		else if (strstr(filename->name, "disparity_cif_determ_top") != NULL) {
-			current->n_dm_pages = min(1022u, n_dm_pages);
-			current->dm_pages = disparity_cif_dmpgs;
-			printk(", disparity_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "mser_cif_determ_top") != NULL) {
-			current->n_dm_pages = min(987u, n_dm_pages);
-			current->dm_pages = mser_cif_dmpgs;
-			printk(", mser_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "sift_cif_determ_top") != NULL) {
-			current->n_dm_pages = min(8092u, n_dm_pages);
-			current->dm_pages = sift_cif_dmpgs;
-			printk(", sift_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "svm_cif_determ_top") != NULL) {
-			current->n_dm_pages = min(113u, n_dm_pages);
-			current->dm_pages = svm_cif_dmpgs;
-			printk(", svm_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else if (strstr(filename->name, "texture_synthesis_cif_determ_top") != NULL) {
-			current->n_dm_pages = min(362u, n_dm_pages);
-			current->dm_pages = texture_synth_cif_dmpgs;
-			printk(", texture_synthesis_cif_determ_top, n_dm_pages: %u\n", current->n_dm_pages);
-		}
-		else
-			printk(", is not recognized.\n");
-	}
+	dm_pages_setup(filename->name, argv);
 #endif
 
 	/* We're below the limit (still or again), so we don't want to make

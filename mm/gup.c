@@ -1021,32 +1021,56 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
 
-inline pte_t* get_pte(unsigned long start, 
-					  struct mm_struct *mm, 
-	                  unsigned int gup_flags)
+/*
+ * Mark the PTE backing @addr as deterministic memory.
+ *
+ * Called from __get_user_pages() after the page has been faulted in, so the
+ * mapping normally exists; anything unexpected (a hole, or a huge mapping that
+ * has no PTE level) is simply skipped rather than forced.
+ */
+static void mark_pte_detmem(struct vm_area_struct *vma, unsigned long addr)
 {
-	unsigned long pg = start & PAGE_MASK;
-    pgd_t *pgd;
-    p4d_t *p4d;
-    pud_t *pud;
-    pmd_t *pmd;
+	struct mm_struct *mm = vma->vm_mm;
+	unsigned long pg = addr & PAGE_MASK;
+	spinlock_t *ptl;
+	pte_t *ptep, entry;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
 
-    if (pg > TASK_SIZE)
-        pgd = pgd_offset_k(pg);
-    else
-        pgd = pgd_offset(mm, pg);
-    
-    BUG_ON(pgd_none(*pgd));
-    
-    p4d = p4d_offset(pgd, pg);
-    BUG_ON(p4d_none(*p4d));
-    
-    pud = pud_offset(p4d, pg);
-    BUG_ON(pud_none(*pud));
-    
-    pmd = pmd_offset(pud, pg);
+	pgd = pgd_offset(mm, pg);
+	if (pgd_none(*pgd) || unlikely(pgd_bad(*pgd)))
+		return;
 
-    return pte_offset_map(pmd, pg);
+	p4d = p4d_offset(pgd, pg);
+	if (p4d_none(*p4d) || unlikely(p4d_bad(*p4d)))
+		return;
+
+	pud = pud_offset(p4d, pg);
+	if (pud_none(*pud) || unlikely(pud_bad(*pud)))
+		return;
+
+	pmd = pmd_offset(pud, pg);
+	/* No PTE level to update for a huge or absent pmd. */
+	if (pmd_none(*pmd) || pmd_trans_huge(*pmd) || pmd_devmap(*pmd))
+		return;
+	if (unlikely(pmd_bad(*pmd)))
+		return;
+
+	ptep = pte_offset_map_lock(mm, pmd, pg, &ptl);
+	entry = *ptep;
+	if (pte_present(entry) && !pte_detmem(entry)) {
+		entry = pte_mkdetmem(entry);
+		set_pte_at(mm, pg, ptep, entry);
+		/*
+		 * The old translation may still be cached, and the DM bit is
+		 * only observed by the memory controller once the walker has
+		 * reloaded the PTE, so the stale entry has to go.
+		 */
+		flush_tlb_page(vma, pg);
+	}
+	pte_unmap_unlock(ptep, ptl);
 }
 
 #endif
@@ -1131,11 +1155,6 @@ static long __get_user_pages(struct mm_struct *mm,
 		struct page *page;
 		unsigned int foll_flags = gup_flags;
 		unsigned int page_increm;
-
-#ifdef CONFIG_MMAP_OUTER_CACHE
-		pte_t *page_table;
-		pte_t entry;
-#endif
 
 		/* first iteration or cross vma bound */
 		if (!vma || start >= vma->vm_end) {
@@ -1231,13 +1250,8 @@ next_page:
 			ctx.page_mask = 0;
 		}
 #ifdef CONFIG_MMAP_OUTER_CACHE
-		if (vma->vm_flags & VM_OUTERCACHE) {
-			page_table = get_pte(start, mm, gup_flags);
-			entry = pte_mkdetmem(*page_table);
-			set_pte_at(mm, start, page_table, entry);
-			printk("__get_user_pages ==  vma_start = 0x%08lx; pte_val = 0x%08lx; vm_flags = 0x%08lx\n", 
-				vma->vm_start, pte_val(entry), vma->vm_flags);
-		}
+		if (vma->vm_flags & VM_OUTERCACHE)
+			mark_pte_detmem(vma, start);
 #endif
 		page_increm = 1 + (~(start >> PAGE_SHIFT) & ctx.page_mask);
 		if (page_increm > nr_pages)

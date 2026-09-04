@@ -91,8 +91,17 @@ typedef struct {
 #define _PAGE_MTMASK_SVPBMT	(_PAGE_NOCACHE_SVPBMT | _PAGE_IO_SVPBMT)
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
-
-#define _PAGE_DETMEM    (1UL << 54)    /* Setting for deterministic memory */
+/*
+ * Deterministic-memory marker, carried in PTE bit 54.
+ *
+ * Bits 60:54 are reserved by the RISC-V privileged spec and must be zero, so
+ * stock hardware (and stock QEMU/gem5) will raise a page fault on a PTE that
+ * sets this.  It is used anyway because the bit has to reach the memory
+ * controller: the RSW field (bits 9:8) is ignored by the page-table walker and
+ * so cannot carry the property out to DRAM.  This therefore only works on the
+ * matching DetMem gem5 model, whose walker and TLB propagate bit 54.
+ */
+#define _PAGE_DETMEM    (1UL << 54)
 
 #endif
 

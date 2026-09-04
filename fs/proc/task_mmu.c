@@ -256,7 +256,8 @@ static void show_vma_header_prefix(struct seq_file *m,
 				   vm_flags_t flags, unsigned long long pgoff,
 				   dev_t dev, unsigned long ino)
 {
-	seq_setwidth(m, 26 + sizeof(void *) * 6 - 1);
+	seq_setwidth(m, 25 + IS_ENABLED(CONFIG_MMAP_OUTER_CACHE) +
+		    sizeof(void *) * 6 - 1);
 	seq_put_hex_ll(m, NULL, start, 8);
 	seq_put_hex_ll(m, "-", end, 8);
 	seq_putc(m, ' ');
@@ -265,9 +266,12 @@ static void show_vma_header_prefix(struct seq_file *m,
 	seq_putc(m, flags & VM_EXEC ? 'x' : '-');
 	seq_putc(m, flags & VM_MAYSHARE ? 's' : 'p');
 #ifdef CONFIG_MMAP_OUTER_CACHE
-	seq_putc(m, flags & VM_OUTERCACHE ? 'd' : '-');	
-#else
-	seq_putc(m, '-');
+	/*
+	 * Extra column for deterministic memory.  This extends the documented
+	 * /proc/pid/maps format, so it only appears when the feature is built
+	 * in; VmFlags "dm" in smaps is the portable way to query it.
+	 */
+	seq_putc(m, flags & VM_OUTERCACHE ? 'd' : '-');
 #endif
 	seq_put_hex_ll(m, " ", pgoff, 8);
 	seq_put_hex_ll(m, " ", MAJOR(dev), 2);
@@ -687,6 +691,9 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 		[ilog2(VM_ARCH_1)]	= "ar",
 		[ilog2(VM_WIPEONFORK)]	= "wf",
 		[ilog2(VM_DONTDUMP)]	= "dd",
+#ifdef CONFIG_MMAP_OUTER_CACHE
+		[ilog2(VM_OUTERCACHE)]	= "dm",
+#endif
 #ifdef CONFIG_ARM64_BTI
 		[ilog2(VM_ARM64_BTI)]	= "bt",
 #endif

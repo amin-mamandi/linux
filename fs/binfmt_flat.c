@@ -897,7 +897,7 @@ static int load_flat_binary(struct linux_binprm *bprm)
 	set_binfmt(&flat_format);
 
 #ifdef CONFIG_MMU
-	res = setup_arg_pages(bprm, STACK_TOP, EXSTACK_DEFAULT);
+	res = setup_arg_pages(bprm, STACK_TOP, EXSTACK_DEFAULT, 0);
 	if (!res)
 		res = create_flat_tables(bprm, bprm->p);
 #else

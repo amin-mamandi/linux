@@ -845,27 +845,32 @@ config HAVE_SETUP_PER_CPU_AREA
 config FRONTSWAP
 	bool
 
-config DETMEM_PALLOC
-	bool "Enable PALLOC with Deterministic Memory support"
-	depends on CGROUP_PALLOC
-	default y
-	help
-		This option enables the use of Deterministic Memory support
-		for the PALLOC memory allocator.  This is a new memory
-		allocation scheme that allows for more efficient memory
-		allocation and deallocation.
-
 config MMAP_OUTER_CACHE
-	bool "Support for outer-cacheable only memory mapping and Enable additional MMAP flag MAP_OUTER_CACHE "
-	depends on MMU
+	bool "Deterministic (outer-cacheable only) memory mappings"
+	depends on MMU && 64BIT && RISCV
 	help
-	  When two processes share a portion of memory, CPU coherency
-	  protocols are responsible for maintaining private cache
-	  copies coherent. However, this may introduce predictability
-	  issues on parallel tasks with real-time requirements. This
-	  option introduces an additional flag (MAP_OUTER_CACHE) for mmap
-	  that causes a block of allocated memory to be flagged as
-	  outer-cacheable only.
+	  Adds an MAP_OUTER_CACHE flag to mmap() and a matching VM_OUTERCACHE
+	  VMA flag.  Pages in such a mapping are tagged in the page table so
+	  that the memory controller can give them deterministic service.
+
+	  The page-table tag is a RISC-V specific PTE bit and the VMA flag
+	  needs a 64-bit vm_flags_t, hence the dependencies above.
+
+	  If unsure, say N.
+
+config DETMEM_PALLOC
+	bool "Per-cgroup bank partitioning for deterministic memory"
+	depends on CGROUP_PALLOC && MMAP_OUTER_CACHE
+	help
+	  Adds a "dm_bins" file to the palloc cgroup controller, alongside the
+	  existing "bins" file, so that deterministic and best-effort pages can
+	  be drawn from different DRAM banks.
+
+	  Note: the dm_bins mask is currently only exposed to user space; the
+	  page allocator does not yet consult it when servicing an allocation
+	  for a deterministic mapping.
+
+	  If unsure, say N.
 
 config CMA
 	bool "Contiguous Memory Allocator"

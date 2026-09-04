@@ -371,7 +371,7 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 				  &current->mm->start_brk);
 
 	retval = setup_arg_pages(bprm, current->mm->start_stack,
-				 executable_stack);
+				 executable_stack, 0);
 	if (retval < 0)
 		goto error;
 #ifdef ARCH_HAS_SETUP_ADDITIONAL_PAGES

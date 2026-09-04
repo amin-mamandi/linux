@@ -120,8 +120,8 @@ extern int suid_dumpable;
 
 extern int setup_arg_pages(struct linux_binprm * bprm,
 			   unsigned long stack_top,
-			   int executable_stack, 
-			   bool deterministic);
+			   int executable_stack,
+			   unsigned long extra_vm_flags);
 extern int transfer_args_to_stack(struct linux_binprm *bprm,
 				  unsigned long *sp_location);
 extern int bprm_change_interp(const char *interp, struct linux_binprm *bprm);

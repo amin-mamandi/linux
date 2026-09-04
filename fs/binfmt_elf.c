@@ -110,7 +110,7 @@ static struct linux_binfmt elf_format = {
 #define BAD_ADDR(x) (unlikely((unsigned long)(x) >= TASK_SIZE))
 
 static int set_brk(unsigned long start, unsigned long end, int prot,
-		           bool deterministic)
+		   unsigned long extra_vm_flags)
 {
 	start = ELF_PAGEALIGN(start);
 	end = ELF_PAGEALIGN(end);
@@ -121,7 +121,7 @@ static int set_brk(unsigned long start, unsigned long end, int prot,
 		 * executable, honour that (ppc32 needs this).
 		 */
 		int error = vm_brk_flags(start, end - start,
-				prot & PROT_EXEC ? VM_EXEC : 0, deterministic);
+				(prot & PROT_EXEC ? VM_EXEC : 0) | extra_vm_flags);
 		if (error)
 			return error;
 	}
@@ -696,7 +696,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 	/* Finally, if there is still more bss to allocate, do it. */
 	if (last_bss > elf_bss) {
 		error = vm_brk_flags(elf_bss, last_bss - elf_bss,
-				bss_prot & PROT_EXEC ? VM_EXEC : 0, false);
+				bss_prot & PROT_EXEC ? VM_EXEC : 0);
 		if (error)
 			goto out;
 	}
@@ -841,6 +841,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	const char *filename;
 	bool deterministic = false;
 	bool determ_heap = false;
+	unsigned long dm_vm_flags = 0;
 
 	retval = -ENOEXEC;
 	/* First of all, some simple consistency checks */
@@ -1020,14 +1021,13 @@ out_free_interp:
 		deterministic = true;
 	else if (strstr(filename, "determ_heap") != NULL)
 		determ_heap = true;
-#if 0
-	current->is_dm_task = deterministic || determ_heap;
-#endif
+	if (deterministic || determ_heap)
+		dm_vm_flags = VM_OUTERCACHE;
 
 	/* Do this so that we can load the interpreter, if need be.  We will
 	   change some of these later */
 	retval = setup_arg_pages(bprm, randomize_stack_top(STACK_TOP),
-				 executable_stack, deterministic || determ_heap);
+				 executable_stack, dm_vm_flags);
 	if (retval < 0)
 		goto out_free_dentry;
 
@@ -1059,7 +1059,7 @@ out_free_interp:
 			   and clear the area.  */
 			retval = set_brk(elf_bss + load_bias,
 					 elf_brk + load_bias,
-					 bss_prot, deterministic || determ_heap);
+					 bss_prot, dm_vm_flags);
 			if (retval)
 				goto out_free_dentry;
 			nbyte = ELF_PAGEOFFSET(elf_bss);
@@ -1083,9 +1083,8 @@ out_free_interp:
 
 		elf_flags = MAP_PRIVATE;
 
-		if(deterministic){
-		   elf_flags |= MAP_OUTER_CACHE;
-		}
+		if (deterministic)
+			elf_flags |= MAP_OUTER_CACHE;
 
 		vaddr = elf_ppnt->p_vaddr;
 		/*
@@ -1252,7 +1251,7 @@ out_free_interp:
 	 * mapping in the interpreter, to make sure it doesn't wind
 	 * up getting placed where the bss needs to go.
 	 */
-	retval = set_brk(elf_bss, elf_brk, bss_prot, deterministic || determ_heap);
+	retval = set_brk(elf_bss, elf_brk, bss_prot, dm_vm_flags);
 	if (retval)
 		goto out_free_dentry;
 	if (likely(elf_bss != elf_brk) && unlikely(padzero(elf_bss))) {
@@ -1449,7 +1448,7 @@ static int load_elf_library(struct file *file)
 	len = ELF_PAGEALIGN(eppnt->p_filesz + eppnt->p_vaddr);
 	bss = ELF_PAGEALIGN(eppnt->p_memsz + eppnt->p_vaddr);
 	if (bss > len) {
-		error = vm_brk(len, bss - len, false);
+		error = vm_brk(len, bss - len);
 		if (error)
 			goto out_free_ph;
 	}

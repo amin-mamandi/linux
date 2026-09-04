@@ -568,19 +568,8 @@ struct page *vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 	unsigned long pfn = pte_pfn(pte);
 
 	if (IS_ENABLED(CONFIG_ARCH_HAS_PTE_SPECIAL)) {
-		if (likely(!pte_special(pte)	
-#ifdef CONFIG_MMAP_OUTER_CACHE
-		&& !pte_detmem(pte)
-#endif
-))
+		if (likely(!pte_special(pte)))
 			goto check_pfn;
-#ifdef CONFIG_MMAP_OUTER_CACHE
-        // If it's a deterministic memory page, handle it like a normal page
-        if (pte_detmem(pte)){
-			printk("vm_normal_page == DetMem page found\n");
-            goto check_pfn;
-		}
-#endif
 		if (vma->vm_ops && vma->vm_ops->find_special_page)
 			return vma->vm_ops->find_special_page(vma, addr);
 		if (vma->vm_flags & (VM_PFNMAP | VM_MIXEDMAP))
@@ -3156,7 +3145,6 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 #ifdef CONFIG_MMAP_OUTER_CACHE
 		if ((vma->vm_flags & VM_OUTERCACHE) || current->dm_page_fault)
 			entry = pte_mkdetmem(entry);
-		
 #endif
 		/*
 		 * Clear the pte entry and flush it first, before updating the
@@ -4111,9 +4099,8 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		entry = pte_mkwrite(pte_mkdirty(entry));
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
-	/* If this VM was allocated as an outer cacheable page, modify
-		* the PTE entry to reflect this setting */
-	if (vma->vm_flags & VM_OUTERCACHE || current->dm_page_fault) 
+	/* If this VMA is deterministic memory, reflect that in the PTE. */
+	if ((vma->vm_flags & VM_OUTERCACHE) || current->dm_page_fault)
 		entry = pte_mkdetmem(entry);
 #endif
 
@@ -4334,13 +4321,15 @@ void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr)
 	}
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
-		/* If this VM was allocated as an outer cacheable page, modify
-		 * the PTE entry to reflect this setting */
-		if ((vma->vm_flags & VM_OUTERCACHE) || current->dm_page_fault) 
-			entry = pte_mkdetmem(entry);
-		
+	/*
+	 * Reflect deterministic memory in the PTE.  do_set_pte() is also called
+	 * by filemap_map_pages() for pages around the faulting address, so the
+	 * per-task hint only applies to the address that actually faulted.
+	 */
+	if ((vma->vm_flags & VM_OUTERCACHE) ||
+	    (current->dm_page_fault && addr == vmf->address))
+		entry = pte_mkdetmem(entry);
 #endif
-	
 
 	set_pte_at(vma->vm_mm, addr, vmf->pte, entry);
 }
@@ -4907,33 +4896,40 @@ split:
  * The mmap_lock may have been released depending on flags and our return value.
  * See filemap_fault() and __folio_lock_or_retry().
  */
+#ifdef CONFIG_MMAP_OUTER_CACHE
+/*
+ * Is @address one of the deterministic-memory pages selected for this task?
+ *
+ * The table is ordered by access frequency rather than by address, so it
+ * cannot be searched with bsearch(); the cached [min, max] bounds reject the
+ * common miss without touching it at all.
+ */
+static bool is_dm_page(unsigned long address)
+{
+	unsigned long vpn = address >> PAGE_SHIFT;
+	unsigned int i;
+
+	if (!current->dm_pages)
+		return false;
+	if (vpn < current->dm_page_min || vpn > current->dm_page_max)
+		return false;
+
+	for (i = 0; i < current->n_dm_pages; i++)
+		if (vpn == current->dm_pages[i])
+			return true;
+
+	return false;
+}
+#endif /* CONFIG_MMAP_OUTER_CACHE */
+
 static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 {
 	pte_t entry;
 
 #ifdef CONFIG_MMAP_OUTER_CACHE
-    const unsigned long *dm_pages;
-    bool is_dm_page = false;
-
-    if ((dm_pages = current->dm_pages)) {
-        int i;
-        unsigned long page_num = vmf->address >> PAGE_SHIFT;
-        
-        // Add logging here to track when DM pages are used
-        for (i = 0; i < current->n_dm_pages; i++) {
-            if (page_num == dm_pages[i]) {
-                printk("DM page hit == Process %s using DM page %d (0x%08lx) for address 0x%08lx\n", 
-                       current->comm, i, dm_pages[i], vmf->address);
-                is_dm_page = true;
-                break;
-            }
-        }
-    }
-    
-    current->dm_page_fault = is_dm_page || (vmf->vma->vm_flags & VM_OUTERCACHE);
+	current->dm_page_fault = is_dm_page(vmf->address) ||
+				 (vmf->vma->vm_flags & VM_OUTERCACHE);
 #endif
-
-	entry = *vmf->pte;
 
 	if (unlikely(pmd_none(*vmf->pmd))) {
 		/*
@@ -5010,11 +5006,6 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		else if (likely(vmf->flags & FAULT_FLAG_WRITE))
 			entry = pte_mkdirty(entry);
 	}
-
-#ifdef CONFIG_MMAP_OUTER_CACHE
-	/* current->dm_page_fault = false; */
-	vmf->vma->vm_mm->dm_page_fault = false;
-#endif
 
 	entry = pte_mkyoung(entry);
 	if (ptep_set_access_flags(vmf->vma, vmf->address, vmf->pte, entry,
